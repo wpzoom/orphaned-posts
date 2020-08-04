@@ -103,30 +103,18 @@ class WPZOOM_Orphaned_Data {
 	 * @since  1.0.0
 	 */
 	public function init() {
-		// If the plugin has not already been initialized...
 		if ( false === $this->initialized ) {
-			// Assign the values for the plugins 'root' dir/url
 			$this->plugin_dir_path = plugin_dir_path( __FILE__ );
 			$this->plugin_dir_url = plugin_dir_url( __FILE__ );
-
-			// [...]
 			$this->orphaned_post_types = $this->get_nonexistent_post_types();
 
-			// Load the correct translation files for the plugin
 			load_plugin_textdomain( 'wpzoom-orphaned-data', false, dirname( plugin_basename( __FILE__ ) ) . '/languages' );
 
-			// Enqueue the scripts and styles used in the admin
 			add_action( 'admin_enqueue_scripts', array( $this, 'admin_scripts' ) );
-
-			// [...]
 			add_action( 'admin_menu', array( $this, 'register_menus' ) );
-
-			// [...]
 			add_action( 'tool_box', array( $this, 'toolbox_card' ) );
 
-			// [...]
 			foreach ( $this->orphaned_post_types as $post_type ) {
-				// [...]
 				register_post_type( $post_type, array(
 					'label'               => ucwords( trim( str_replace( array( '-', '_' ), ' ', $post_type ) ) ),
 					'public'              => false,
@@ -139,17 +127,17 @@ class WPZOOM_Orphaned_Data {
 					'show_in_rest'        => false,
 					'rewrite'             => false,
 					'query_var'           => false,
-					'can_export'          => false
+					'can_export'          => false,
+					'_edit_link'          => 'post.php?post=%d'
 				) );
 			}
 
-			// Mark the plugin as initialized
 			$this->initialized = true;
 		}
 	}
 
 	/**
-	 * [...]
+	 * Registers a menu for this plugin.
 	 *
 	 * @access public
 	 * @return void
@@ -167,7 +155,7 @@ class WPZOOM_Orphaned_Data {
 	}
 
 	/**
-	 * [...]
+	 * Sets up and enqueues needed scripts in the WordPress admin.
 	 *
 	 * @access public
 	 * @return void
@@ -188,7 +176,7 @@ class WPZOOM_Orphaned_Data {
 	}
 
 	/**
-	 * [...]
+	 * Displays the main plugin page.
 	 *
 	 * @access public
 	 * @return void
@@ -211,7 +199,7 @@ class WPZOOM_Orphaned_Data {
 		$orphaned_post_types_table->process_bulk_action();
 		$orphaned_post_types_table->prepare_items();
 
-		?><div class="wrap nosubsub">
+		?><div id="wpzoom-orphaned-data" class="wrap nosubsub">
 			<h1><?php esc_html_e( 'WPZOOM Orphaned Data', 'wpzoom-orphaned-data' ); ?></h1>
 			<hr class="wp-header-end" />
 
@@ -228,7 +216,7 @@ class WPZOOM_Orphaned_Data {
 	}
 
 	/**
-	 * [...]
+	 * A card on the main tools page that links to this plugin's page.
 	 *
 	 * @access public
 	 * @return void
@@ -343,8 +331,7 @@ class WPZOOM_Orphaned_Post_Types extends WP_Posts_List_Table {
 		echo '<select class="widefat">';
 		echo '<option selected disabled hidden>' . ucwords( trim( str_replace( array( '-', '_' ), ' ', $post->post_type ) ) ) . '</option>';
 
-		foreach ( get_post_types( array( 'public' => true ), 'objects' ) as $post_type )
-		{
+		foreach ( get_post_types( array( 'public' => true ), 'objects' ) as $post_type ) {
 			if ( ! in_array( $post_type->name, $this->orphaned_post_types ) ) {
 				echo '<option value="' . $post_type->name . '">' . $post_type->labels->singular_name . '</option>';
 			}
@@ -354,36 +341,96 @@ class WPZOOM_Orphaned_Post_Types extends WP_Posts_List_Table {
 		echo '</td>';
 	}
 
-	protected function row_actions( $actions, $always_visible = false ) {
-		if ( isset( $actions[ 'edit' ] ) ) {
-			unset( $actions[ 'edit' ] );
+	protected function handle_row_actions( $post, $column_name, $primary ) {
+		if ( $primary !== $column_name ) {
+			return '';
 		}
 
-		if ( isset( $actions[ 'inline hide-if-no-js' ] ) ) {
-			unset( $actions[ 'inline hide-if-no-js' ] );
+		$actions = array();
+
+		if ( current_user_can( 'delete_posts' ) ) {
+			$actions[ 'delete' ] = sprintf(
+				'<a href="%s" class="submitdelete" aria-label="%s">%s</a>',
+				get_delete_post_link( $post->ID, '', true ),
+				esc_attr( sprintf( __( 'Delete &#8220;%s&#8221; permanently', 'wpzoom-orphaned-data' ), _draft_or_post_title() ) ),
+				__( 'Delete', 'wpzoom-orphaned-data' )
+			);
 		}
 
-		if ( isset( $actions[ 'view' ] ) ) {
-			unset( $actions[ 'view' ] );
-		}
-
-		if ( isset( $actions[ 'export' ] ) ) {
-			unset( $actions[ 'export' ] );
-		}
-
-		return parent::row_actions( $actions, $always_visible );
+		return parent::row_actions( $actions );
 	}
 
 	protected function get_bulk_actions() {
-		$actions = parent::get_bulk_actions();
+		$actions = array();
 
-		if ( isset( $actions[ 'edit' ] ) ) {
-			unset( $actions[ 'edit' ] );
+		if ( current_user_can( 'edit_posts' ) ) {
+			$actions[ 'change_type' ] = __( 'Change Post Type', 'wpzoom-orphaned-data' );
 		}
 
-		$actions[ 'change_type' ] = __( 'Change Post Type', 'wpzoom-orphaned-data' );
+		if ( current_user_can( 'delete_posts' ) ) {
+			$actions[ 'delete' ] = __( 'Delete', 'wpzoom-orphaned-data' );
+		}
 
-		return array_reverse( $actions, true );
+		return $actions;
+	}
+
+	protected function bulk_actions( $which = '' ) {
+		ob_start();
+		parent::bulk_actions( $which );
+		$actions = ob_get_clean();
+
+		$post_types = '';
+		foreach ( get_post_types( array( 'public' => true ), 'objects' ) as $post_type ) {
+			if ( ! in_array( $post_type->name, $this->orphaned_post_types ) ) {
+				$post_types .= '<option value="' . $post_type->name . '">' . $post_type->labels->singular_name . '</option>';
+			}
+		}
+
+		$html = '<select class="bulkactions-post-type hidden" name="wpzod_post_type">
+			<option selected disabled>' . __( 'Select New Post Type', 'wpzoom-orphaned-data' ) . '</option>
+			' . $post_types . '
+		</select>';
+
+		echo preg_replace( '/\<\/select\>/i', '</select>' . $html, $actions );
+	}
+
+	public function process_bulk_action() {
+		$action = $this->current_action();
+		$posts = isset( $_REQUEST[ 'post' ] ) ? wp_parse_id_list( wp_unslash( $_REQUEST[ 'post' ] ) ) : array();
+		$count = 0;
+
+		switch ( $action ) {
+			case 'delete':
+				foreach ( $posts as $post ) {
+					if ( wp_delete_post( $post, true ) ) {
+						$count ++;
+					}
+				}
+
+				add_settings_error(
+					'bulk_action',
+					'bulk_action',
+					sprintf( _n( 'Deleted %d post', 'Deleted %d posts', $count ), $count ),
+					'success'
+				);
+				break;
+			case 'change_type':
+				if ( isset( $_REQUEST[ 'wpzod_post_type' ] ) && get_post_type_object( $_REQUEST[ 'wpzod_post_type' ] ) ) {
+					foreach ( $posts as $post ) {
+						if ( set_post_type( $post, $_REQUEST[ 'wpzod_post_type' ] ) ) {
+							$count++;
+						}
+					}
+				}
+
+				add_settings_error(
+					'bulk_action',
+					'bulk_action',
+					sprintf( _n( 'Post type changed for %d post', 'Post type changed for %d posts', $count ), $count ),
+					'success'
+				);
+				break;
+		}
 	}
 
 	public function inline_edit() {}
