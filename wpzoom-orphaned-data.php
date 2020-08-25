@@ -89,7 +89,7 @@ class WPZOOM_Orphaned_Data {
 	/**
 	 * All currently orphaned post types.
 	 *
-	 * @var    string
+	 * @var    array
 	 * @access public
 	 * @since  1.0.0
 	 */
@@ -113,6 +113,8 @@ class WPZOOM_Orphaned_Data {
 			add_action( 'admin_enqueue_scripts', array( $this, 'admin_scripts' ) );
 			add_action( 'admin_menu', array( $this, 'register_menus' ) );
 			add_action( 'tool_box', array( $this, 'toolbox_card' ) );
+			add_filter( 'set_screen_option_edit_orphaned_post_per_page', array( $this, 'set_screen_option' ), 10, 3 );
+			add_filter( 'edit_posts_per_page', array( $this, 'filter_posts_per_page' ) );
 
 			foreach ( $this->orphaned_post_types as $post_type ) {
 				register_post_type( $post_type, array(
@@ -152,6 +154,33 @@ class WPZOOM_Orphaned_Data {
 			'wpzoom-orphaned-data',
 			array( $this, 'display_main' )
 		);
+
+		add_action( 'load-' . $this->main_page_hook, array( $this, 'load_main' ) );
+	}
+
+	/**
+	 * Takes care of things that need to happen when the main page of this plugin loads.
+	 *
+	 * @access public
+	 * @return void
+	 * @since  1.0.0
+	 */
+	public function load_main() {
+		if ( isset( $_POST[ 'wpzod_post_type_filter' ] ) &&
+		     ( !isset( $_GET[ 'wpzod_post_type_filter' ] ) || $_GET[ 'wpzod_post_type_filter' ] != $_POST[ 'wpzod_post_type_filter' ] ) ) {
+			$post_type = sanitize_key( trim( $_REQUEST[ 'wpzod_post_type_filter' ] ) );
+
+			wp_redirect( admin_url( 'tools.php?page=wpzoom-orphaned-data' . ( '0' != $post_type ? '&wpzod_post_type_filter=' . $post_type : '' ) ) );
+			exit;
+		}
+
+		add_screen_option(
+			'per_page',
+			array(
+				'default' => 20,
+				'option'  => 'edit_orphaned_post_per_page',
+			)
+		);
 	}
 
 	/**
@@ -164,15 +193,51 @@ class WPZOOM_Orphaned_Data {
 	function admin_scripts( $hook ) {
 		if ( $hook != $this->main_page_hook ) return;
 
-		wp_enqueue_script( 'wpzoom-orphaned-data-js', trailingslashit( $this->plugin_dir_url ) . 'scripts/index.js', array( 'jquery' ), self::VERSION, true );
-
-		wp_set_script_translations( 'wpzoom-orphaned-data-js', 'wpzoom-orphaned-data', plugin_dir_path( __FILE__ ) . 'languages' );
-
-		wp_localize_script(
+		wp_enqueue_script(
 			'wpzoom-orphaned-data-js',
-			'wpzoomOrphanedData',
-			array()
+			trailingslashit( $this->plugin_dir_url ) . 'scripts/index.js',
+			array( 'jquery' ),
+			self::VERSION,
+			true
 		);
+
+		wp_set_script_translations(
+			'wpzoom-orphaned-data-js',
+			'wpzoom-orphaned-data',
+			plugin_dir_path( __FILE__ ) . 'languages'
+		);
+	}
+
+	/**
+	 * Filters the screen option for the posts per page option on the plugin main page.
+	 *
+	 * @access public
+	 * @return void
+	 * @since  1.0.0
+	 */
+	function set_screen_option( $status, $option, $value ) {
+		return $value;
+	}
+
+	/**
+	 * Filters the posts per page amount on the plugin main page.
+	 *
+	 * @access public
+	 * @return void
+	 * @since  1.0.0
+	 */
+	function filter_posts_per_page( $per_page ) {
+		$current_screen = get_current_screen();
+
+		if ( $current_screen && 'tools_page_wpzoom-orphaned-data' == $current_screen->base ) {
+			$per_page = (int) get_user_option( 'edit_orphaned_post_per_page' );
+
+			if ( empty( $per_page ) || $per_page < 1 ) {
+				$per_page = 20;
+			}
+		}
+
+		return $per_page;
 	}
 
 	/**
@@ -193,7 +258,17 @@ class WPZOOM_Orphaned_Data {
 			'orphaned_post_types' => $this->orphaned_post_types
 		);
 
-		$wp_query = new WP_Query( array( 'post_type' => $this->orphaned_post_types ) );
+		$per_page = (int) get_user_option( 'edit_orphaned_post_per_page' );
+		if ( empty( $per_page ) || $per_page < 1 ) {
+			$per_page = 20;
+		}
+
+		$post_types = $this->orphaned_post_types;
+		if ( isset( $_REQUEST[ 'wpzod_post_type_filter' ] ) ) {
+			$post_types = sanitize_key( trim( $_REQUEST[ 'wpzod_post_type_filter' ] ) );
+		}
+
+		$wp_query = new WP_Query( array( 'post_type' => $post_types, 'posts_per_page' => $per_page ) );
 
 		$orphaned_post_types_table = new WPZOOM_Orphaned_Post_Types( $_list_table_args );
 		$orphaned_post_types_table->process_bulk_action();
@@ -229,7 +304,11 @@ class WPZOOM_Orphaned_Data {
 				<p>
 				<?php
 					printf(
-						__( 'If you want to repair orphaned data in WordPress (like posts from post types that no longer exist), use the <a href="%s">WPZOOM Orphaned Data Tool</a>.', 'wpzoom-orphaned-data' ),
+						__(
+							'If you want to repair orphaned data in WordPress (like posts from post types that no longer exist),
+							 use the <a href="%s">WPZOOM Orphaned Data Tool</a>.',
+							'wpzoom-orphaned-data'
+						),
 						'tools.php?page=wpzoom-orphaned-data'
 					);
 				?>
@@ -410,7 +489,7 @@ class WPZOOM_Orphaned_Post_Types extends WP_Posts_List_Table {
 				add_settings_error(
 					'bulk_action',
 					'bulk_action',
-					sprintf( _n( 'Deleted %d post', 'Deleted %d posts', $count ), $count ),
+					sprintf( _n( 'Deleted %d post', 'Deleted %d posts', $count, 'wpzoom-orphaned-data' ), $count ),
 					'success'
 				);
 				break;
@@ -426,7 +505,7 @@ class WPZOOM_Orphaned_Post_Types extends WP_Posts_List_Table {
 				add_settings_error(
 					'bulk_action',
 					'bulk_action',
-					sprintf( _n( 'Post type changed for %d post', 'Post type changed for %d posts', $count ), $count ),
+					sprintf( _n( 'Post type changed for %d post', 'Post type changed for %d posts', $count, 'wpzoom-orphaned-data' ), $count ),
 					'success'
 				);
 				break;
@@ -435,5 +514,44 @@ class WPZOOM_Orphaned_Post_Types extends WP_Posts_List_Table {
 
 	public function inline_edit() {}
 
-	protected function extra_tablenav( $which ) {}
+	protected function extra_tablenav( $which ) {
+		?><div class="alignleft actions">
+			<?php
+			if ( 'top' === $which ) {
+				$output = $this->types_dropdown();
+
+				if ( ! empty( $output ) ) {
+					echo $output;
+					submit_button( __( 'Filter', 'wpzoom-orphaned-data' ), '', 'filter_action', false, array( 'id' => 'post-query-submit' ) );
+				}
+			}
+			?>
+		</div><?php
+	}
+
+	protected function types_dropdown() {
+		$output = '';
+		$post_types = $this->orphaned_post_types;
+
+		if ( !empty( $post_types ) ) {
+			$selected = '0';
+			if ( isset( $_REQUEST[ 'wpzod_post_type_filter' ] ) ) {
+				$selected = sanitize_key( trim( $_REQUEST[ 'wpzod_post_type_filter' ] ) );
+			}
+
+			$output = '<label class="screen-reader-text" for="wpzod_post_type_filter">' . __( 'Filter by post type', 'wpzoom-orphaned-data' ) . '</label>';
+			$output .= '<select name="wpzod_post_type_filter" id="wpzod_post_type_filter" class="postform">';
+			$output .= '<option value="0"' . ( '0' == $selected ? ' selected' : '' ) . '>' . __( 'All Post Types', 'wpzoom-orphaned-data' ) . '</option>';
+
+			foreach ( $post_types as $post_type ) {
+				$selected = $post_type == $selected ? ' selected': '';
+				$nicename = ucwords( trim( str_replace( array( '-', '_' ), ' ', $post_type ) ) );
+				$output .= '<option value="' . esc_attr( $post_type ) . '"' . $selected . '>' . $nicename . '</option>';
+			}
+
+			$output .= '</select>';
+		}
+
+		return $output;
+	}
 }
