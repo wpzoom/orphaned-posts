@@ -31,7 +31,7 @@ if ( ! class_exists( 'WP_Posts_List_Table' ) ) {
 $wpzoom_od = new WPZOOM_Orphaned_Data();
 
 // Hook the plugin into WordPress
-add_action( 'init', array( $wpzoom_od, 'init' ) );
+add_action( 'init', array( $wpzoom_od, 'init' ), 999 );
 
 /**
  * Class WPZOOM_Orphaned_Data
@@ -110,9 +110,9 @@ class WPZOOM_Orphaned_Data {
 
 			load_plugin_textdomain( 'wpzoom-orphaned-data', false, dirname( plugin_basename( __FILE__ ) ) . '/languages' );
 
-			add_action( 'admin_enqueue_scripts', array( $this, 'admin_scripts' ) );
-			add_action( 'admin_menu', array( $this, 'register_menus' ) );
-			add_action( 'tool_box', array( $this, 'toolbox_card' ) );
+			add_action( 'admin_enqueue_scripts', array( $this, 'admin_scripts' ), 999 );
+			add_action( 'admin_menu', array( $this, 'register_menus' ), 999 );
+			add_action( 'tool_box', array( $this, 'toolbox_card' ), 999 );
 			add_filter( 'set_screen_option_edit_orphaned_post_per_page', array( $this, 'set_screen_option' ), 10, 3 );
 			add_filter( 'edit_posts_per_page', array( $this, 'filter_posts_per_page' ) );
 
@@ -155,7 +155,7 @@ class WPZOOM_Orphaned_Data {
 			array( $this, 'display_main' )
 		);
 
-		add_action( 'load-' . $this->main_page_hook, array( $this, 'load_main' ) );
+		add_action( 'load-' . $this->main_page_hook, array( $this, 'load_main' ), 999 );
 	}
 
 	/**
